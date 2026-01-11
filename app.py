@@ -1,207 +1,176 @@
+
 import streamlit as st
 import pandas as pd
-import os
+import hashlib
 import random
-import datetime
-from PIL import Image
+from datetime import datetime
+import os
 
-# --- CONFIGURATION & SETUP ---
-ST_PAGE_TITLE = "National ID Registry System"
-DB_FILE = "database.csv"
-PHOTO_DIR = "citizen_photos"
+# --- 1. SYSTEM CONFIGURATION ---
+st.set_page_config(
+    page_title="E-Tazkira Afghanistan",
+    page_icon="🇦🇫",
+    layout="centered"
+)
 
-# Ensure directories exist
-if not os.path.exists(PHOTO_DIR):
-    os.makedirs(PHOTO_DIR)
+# File to store data (simulated database)
+DB_FILE = "afghan_id_database.csv"
 
-# Initialize CSV if it doesn't exist
-if not os.path.exists(DB_FILE):
-    df_init = pd.DataFrame(columns=["NationalID", "FirstName", "FatherName", "Province", "RegDate", "PhotoPath"])
-    df_init.to_csv(DB_FILE, index=False)
-
-# List of Provinces (Sample)
-PROVINCES = [
-    "Kabul", "Herat", "Kandahar", "Balkh", "Nangarhar", 
-    "Bamyan", "Kunduz", "Helmand", "Badakhshan", "Ghazni"
-]
-
-# --- UTILITY FUNCTIONS ---
+# --- 2. BACKEND FUNCTIONS (The Logic) ---
 def load_data():
-    return pd.read_csv(DB_FILE, dtype={"NationalID": str})
+    """Loads the citizen database from the CSV file."""
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE)
+    else:
+        # Create a new empty database if one doesn't exist
+        return pd.DataFrame(columns=[
+            "National ID", "Full Name", "Father's Name", 
+            "Province", "Date of Birth", "Gender", "Photo_Hash", "Registration Date"
+        ])
 
-def save_citizen(first_name, father_name, province, photo_bytes):
-    # Generate random 12-digit ID
-    nid = "".join([str(random.randint(0, 9)) for _ in range(12)])
-    reg_date = datetime.date.today().strftime("%Y-%m-%d")
-    
-    # Save Photo
-    photo_filename = f"{nid}.jpg"
-    photo_path = os.path.join(PHOTO_DIR, photo_filename)
-    with open(photo_path, "wb") as f:
-        f.write(photo_bytes)
-        
-    # Append to CSV
-    new_data = pd.DataFrame({
-        "NationalID": [nid],
-        "FirstName": [first_name],
-        "FatherName": [father_name],
-        "Province": [province],
-        "RegDate": [reg_date],
-        "PhotoPath": [photo_path]
-    })
-    
-    # Load existing, append, and save
-    current_df = load_data()
-    updated_df = pd.concat([current_df, new_data], ignore_index=True)
-    updated_df.to_csv(DB_FILE, index=False)
-    
-    return nid, photo_path
+def save_data(df):
+    """Saves the database to the CSV file."""
+    df.to_csv(DB_FILE, index=False)
 
-# --- PAGE STYLING ---
-st.set_page_config(page_title=ST_PAGE_TITLE, layout="centered")
+def generate_national_id(province, birth_year):
+    """Generates a realistic looking 13-digit ID based on province and birth year."""
+    # Format: [Province Code][Year][Random Digits]
+    # Example: 01-1990-837482
+    prov_code = abs(hash(province)) % 99 + 1
+    random_part = random.randint(100000, 999999)
+    return f"{prov_code:02d}-{birth_year}-{random_part}"
 
-st.markdown("""
-    <style>
-    .main-header {
-        text-align: center;
-        color: #1E3A8A;
-        font-family: 'Helvetica', sans-serif;
-        margin-bottom: 20px;
-    }
-    .id-card {
-        background-color: #f8f9fa;
-        border: 2px solid #1E3A8A;
-        border-radius: 15px;
-        padding: 20px;
-        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
-        margin-top: 20px;
-    }
-    .card-title {
-        color: #1E3A8A;
-        font-weight: bold;
-        text-align: center;
-        border-bottom: 2px solid #ddd;
-        padding-bottom: 10px;
-        margin-bottom: 10px;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# --- 3. FRONTEND INTERFACE (The Design) ---
 
-# --- MAIN APP LOGIC ---
+# Sidebar Menu
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/5/5c/Emblem_of_Afghanistan_%282013%E2%80%932021%29.svg", width=100)
+st.sidebar.title("National Identity System")
+menu = st.sidebar.radio("Select Service", ["New Registration", "Verify ID", "Admin Dashboard"])
 
-st.markdown(f"<h1 class='main-header'>🏛️ {ST_PAGE_TITLE}</h1>", unsafe_allow_html=True)
+# Load Database
+df = load_data()
 
-# Sidebar Navigation
-menu = st.sidebar.selectbox("Navigation", ["New Registration", "Search Citizen", "Admin Stats"])
-
-# 1. NEW REGISTRATION PAGE
+# --- PAGE 1: NEW REGISTRATION ---
 if menu == "New Registration":
-    st.subheader("📝 New Citizen Registration")
+    st.title("🇦🇫 New E-Tazkira Registration")
+    st.markdown("---")
     
-    with st.form("reg_form", clear_on_submit=True):
+    with st.form("register_form"):
         col1, col2 = st.columns(2)
+        
         with col1:
-            f_name = st.text_input("First Name")
-        with col2:
+            full_name = st.text_input("Full Name (English/Dari)")
             father_name = st.text_input("Father's Name")
-            
-        province = st.selectbox("Province of Residence", PROVINCES)
+            grandfather_name = st.text_input("Grandfather's Name")
         
-        st.write("📸 **Capture Photo**")
-        picture = st.camera_input("Take a picture")
-        
-        submitted = st.form_submit_button("Submit Registration")
-        
-        if submitted:
-            if f_name and father_name and picture:
-                # Save Data
-                nid, p_path = save_citizen(f_name, father_name, province, picture.getbuffer())
-                
-                st.success("✅ Citizen Registered Successfully!")
-                
-                # Display Digital ID Card Preview
-                st.markdown("### 🆔 Generated Digital ID Card")
-                
-                # Create a container that looks like a card
-                with st.container():
-                    st.markdown('<div class="id-card">', unsafe_allow_html=True)
-                    
-                    c1, c2 = st.columns([1, 2])
-                    with c1:
-                        st.image(p_path, width=150)
-                    with c2:
-                        st.markdown(f"<h3 style='margin:0;'>NATIONAL IDENTITY CARD</h3>", unsafe_allow_html=True)
-                        st.markdown(f"**ID Number:** `{nid}`")
-                        st.markdown(f"**Name:** {f_name}")
-                        st.markdown(f"**Father's Name:** {father_name}")
-                        st.markdown(f"**Province:** {province}")
-                        st.markdown(f"**Date:** {datetime.date.today()}")
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-            else:
-                st.error("⚠️ Please fill all text fields and take a photo.")
+        with col2:
+            dob = st.date_input("Date of Birth", min_value=datetime(1920, 1, 1))
+            gender = st.selectbox("Gender", ["Male", "Female"])
+            province = st.selectbox("Province of Origin", [
+                "Kabul", "Herat", "Kandahar", "Balkh", "Nangarhar", 
+                "Badakhshan", "Bamyan", "Kunduz", "Helmand", "Ghazni"
+            ])
 
-# 2. SEARCH CITIZEN PAGE
-elif menu == "Search Citizen":
-    st.subheader("🔍 Search Citizen Database")
+        st.markdown("### 📸 Biometric Capture")
+        st.warning("Please look directly at the camera.")
+        photo = st.camera_input("Take Official Photo")
+
+        submitted = st.form_submit_button("Submit Application")
+
+        if submitted:
+            if full_name and father_name and photo:
+                # 1. Generate ID
+                new_id = generate_national_id(province, dob.year)
+                
+                # 2. Process Photo (In real life we save the image, here we just save a marker)
+                photo_status = "Uploaded" 
+
+                # 3. Create Record
+                new_record = {
+                    "National ID": new_id,
+                    "Full Name": full_name,
+                    "Father's Name": father_name,
+                    "Province": province,
+                    "Date of Birth": str(dob),
+                    "Gender": gender,
+                    "Photo_Hash": "biometric_data_secured",
+                    "Registration Date": str(datetime.now())
+                }
+                
+                # 4. Save to Database
+                df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+                save_data(df)
+
+                # 5. Success Message
+                st.success("✅ Application Submitted Successfully!")
+                st.balloons()
+                
+                # 6. Show the Digital Card
+                st.info(f"Your National ID Number is: **{new_id}**")
+                st.markdown(f"""
+                <div style="border: 2px solid #000; padding: 20px; border-radius: 10px; background-color: #f0f2f6;">
+                    <h3>🇦🇫 Islamic Republic of Afghanistan</h3>
+                    <h4>National Identity Card (E-Tazkira)</h4>
+                    <hr>
+                    <p><b>ID Number:</b> {new_id}</p>
+                    <p><b>Name:</b> {full_name}</p>
+                    <p><b>Father Name:</b> {father_name}</p>
+                    <p><b>Province:</b> {province}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            else:
+                st.error("❌ Please fill all fields and take a photo.")
+
+# --- PAGE 2: VERIFY ID (Public Check) ---
+elif menu == "Verify ID":
+    st.title("🔍 Verify Citizen Identity")
+    st.write("Enter a National ID number to verify if it exists in the central database.")
     
-    search_query = st.text_input("Enter 12-Digit National ID to Search")
+    search_id = st.text_input("Enter National ID Number (e.g., 12-1990-123456)")
     
-    if st.button("Search"):
-        df = load_data()
-        result = df[df['NationalID'] == search_query]
+    if st.button("Search Database"):
+        result = df[df['National ID'] == search_id]
         
         if not result.empty:
-            record = result.iloc[0]
-            st.success("Citizen Found!")
+            person = result.iloc[0]
+            st.success("✅ Identity Verified")
             
-            # Display Card
-            st.markdown('<div class="id-card">', unsafe_allow_html=True)
-            c1, c2 = st.columns([1, 2])
-            with c1:
-                if os.path.exists(record['PhotoPath']):
-                    st.image(record['PhotoPath'], width=150)
-                else:
-                    st.warning("Photo not found on server.")
-            with c2:
-                st.markdown(f"**ID Number:** `{record['NationalID']}`")
-                st.markdown(f"**Name:** {record['FirstName']}")
-                st.markdown(f"**Father's Name:** {record['FatherName']}")
-                st.markdown(f"**Province:** {record['Province']}")
-                st.markdown(f"**Reg Date:** {record['RegDate']}")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
+            # Digital ID Card Display
+            st.markdown(f"""
+            <div style="background-color: #d1fae5; padding: 20px; border-radius: 10px; border: 2px solid #10b981;">
+                <h2 style="color: #065f46;">✔ VALID ID</h2>
+                <p><b>Name:</b> {person['Full Name']}</p>
+                <p><b>Father's Name:</b> {person["Father's Name"]}</p>
+                <p><b>Province:</b> {person['Province']}</p>
+                <p><b>Status:</b> Active Citizen</p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            st.error("❌ No citizen found with that ID.")
+            st.error("❌ ID Not Found in National Database.")
 
-# 3. ADMIN STATS PAGE
-elif menu == "Admin Stats":
-    st.subheader("📊 Administrative Statistics")
+# --- PAGE 3: ADMIN DASHBOARD (Protected) ---
+elif menu == "Admin Dashboard":
+    st.title("🔐 Minister/Admin View")
     
-    df = load_data()
+    # Simple Password Check
+    password = st.text_input("Enter Admin Password", type="password")
     
-    if not df.empty:
-        # High-level metrics
-        total_citizens = len(df)
-        unique_provinces = df['Province'].nunique()
+    if password == "admin123":
+        st.success("Access Granted")
         
-        col1, col2 = st.columns(2)
-        col1.metric("Total Registered Citizens", total_citizens)
-        col2.metric("Provinces Covered", unique_provinces)
+        # Stats
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Citizens", len(df))
+        col2.metric("Provinces Covered", df['Province'].nunique())
+        col3.metric("Pending Updates", "0")
         
-        st.markdown("---")
+        # Data Table
+        st.subheader("Central Database Records")
+        st.dataframe(df)
         
-        # Province Breakdown Chart
-        st.write("### Registrations by Province")
-        prov_counts = df['Province'].value_counts()
-        st.bar_chart(prov_counts)
-        
-        # Raw Data View
-        with st.expander("View Raw Database Records"):
-            st.dataframe(df)
-    else:
-        st.info("No data available yet. Go to 'New Registration' to add citizens.")
-
-# Footer
-st.markdown("---")
-st.caption("© 2023 National Registry Prototype | Secure System")
+        # Download Data
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Full Database (CSV)", csv, "national_db.csv", "text/csv")
+    elif password:
+        st.error("Incorrect Password")
